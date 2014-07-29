@@ -157,6 +157,7 @@ function runsetup() {
         
         remaining_count=$instance_count
         i=0
+        batch_id=0
         while [ $remaining_count -gt 0 ]
         do
             if [ $remaining_count -gt 100 ]
@@ -165,15 +166,16 @@ function runsetup() {
             else
                 batch_size=$remaining_count
             fi
-        	batch=(`ec2-run-instances \
-		            --key "$AMAZON_KEYPAIR_NAME" \
+            batch=(`ec2-run-instances \
+                    --key "$AMAZON_KEYPAIR_NAME" \
                     -t "$INSTANCE_TYPE" \
                     -g "$INSTANCE_SECURITYGROUP" \
                     -n 1-$batch_size \
-		            --region $REGION \
+                    --region $REGION \
                     --availability-zone \
                     $INSTANCE_AVAILABILITYZONE $AMI_ID \
                     | awk '/^INSTANCE/ {print $2}'`)
+            batches[batch_id++]=$batch
             for id in ${batch[@]}
             do
                 attempted_instanceids[i++]=$id
@@ -208,7 +210,12 @@ function runsetup() {
         do
             echo -n .
             status_check_count=$(( $status_check_count + 1))
-            count_passed=$(ec2-describe-instance-status --region $REGION ${attempted_instanceids[@]} | awk '/INSTANCESTATUS/ {print $3}' | grep -c passed)
+			count_passed=0
+            for batch in ${batches[@]}
+            do
+                batch_passed=$(ec2-describe-instance-status --region $REGION ${batch[@]} | awk '/INSTANCESTATUS/ {print $3}' | grep -c passed)
+                count_passed=$[$count_passed-$batch_passed]
+            done
             sleep 3
         done
 
@@ -221,18 +228,39 @@ function runsetup() {
 			  instanceids["$key"]="${attempted_instanceids["$key"]}"
 			done
 
-			# set hosts array
-            hosts=(`ec2-describe-instances --region $REGION ${attempted_instanceids[@]} | awk '/INSTANCE/ {print $4}'`)
+            # set hosts array
+            host_count=0
+            for batch in ${batches[@]}
+            do
+                batch_hosts=(`ec2-describe-instances --region $REGION ${batch[@]} | awk '/INSTANCE/ {print $4}'`)
+                for host in $batch_hosts
+                do
+                    hosts[host_count++]=host
+                done
+            done
+
             echo "all hosts ready"
         else # Amazon probably failed to start a host [*** NOTE this is fairly common ***] so show a msg - TO DO. Could try to replace it with a new one?
             original_count=$countof_instanceids
             # filter requested instances for only those that started well
-            healthy_instanceids=(`ec2-describe-instance-status --region $REGION ${attempted_instanceids[@]} \
+            healthy_count=0;
+            host_count=0
+            for batch in ${batches[@]}
+            do
+                batch_healthy=(`ec2-describe-instance-status --region $REGION ${batch[@]} \
                                 --filter instance-status.reachability=passed \
                                 --filter system-status.reachability=passed \
                                 | awk '/INSTANCE\t/ {print $2}'`)
-
-            hosts=(`ec2-describe-instances --region $REGION ${healthy_instanceids[@]} | awk '/INSTANCE/ {print $4}'`)
+                for healthy in $batch_healthy
+                do
+                    healthy_instanceids[healthy_count++]=healthy
+                done
+                batch_hosts=(`ec2-describe-instances --region $REGION ${batch_healthy[@]} | awk '/INSTANCE/ {print $4}'`)
+                for host in $batch_hosts
+                do
+                    hosts[host_count++]=host
+                done
+            done
 
             if [ "${#healthy_instanceids[@]}" -eq 0 ] ; then
                 countof_instanceids=0
@@ -242,7 +270,10 @@ function runsetup() {
 				    # attempt to terminate any running instances - just to be sure
 			        echo "terminating instance(s)..."
 					# We use attempted_instanceids here to make sure that there are no orphan instances left lying around
-			        ec2-terminate-instances --region $REGION ${attempted_instanceids[@]}
+                    for batch in ${batches[@]}
+                    do
+                        ec2-terminate-instances --region $REGION ${batch[@]}
+                    done
 			        echo
 				fi
                 exit
@@ -265,13 +296,16 @@ function runsetup() {
 
 		# assign a name tag to each instance
 		echo "assigning tags..."
-		(ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag ProductKey=$project)
-        (ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag Service=prod)
-        (ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag Description=PerformanceTest)
-        (ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag Owner=$EMAIL)
-        (ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag ContactEmail=$EMAIL)
-		(ec2-create-tags --region $REGION ${attempted_instanceids[@]} --tag Name="jmeter-ec2-$project")
-		wait
+        for batch in ${batches[@]}
+        do
+            (ec2-create-tags --region $REGION ${batch[@]} --tag ProductKey=$project)
+            (ec2-create-tags --region $REGION ${batch[@]} --tag Service=prod)
+            (ec2-create-tags --region $REGION ${batch[@]} --tag Description=PerformanceTest)
+            (ec2-create-tags --region $REGION ${batch[@]} --tag Owner=$EMAIL)
+            (ec2-create-tags --region $REGION ${batch[@]} --tag ContactEmail=$EMAIL)
+            (ec2-create-tags --region $REGION ${batch[@]} --tag Name="jmeter-ec2-$project")
+        done
+        wait
         echo "complete"
 		echo
 
@@ -827,7 +861,10 @@ function runcleanup() {
 		if [ "$terminate" = "TRUE" ] ; then
 	        echo "terminating instance(s)..."
 			# We use attempted_instanceids here to make sure that there are no orphan instances left lying around
-	        ec2-terminate-instances --region $REGION ${attempted_instanceids[@]}
+			for batch in ${batches[@]}
+            do
+                ec2-terminate-instances --region $REGION ${batch[@]}
+            done
 	        echo
 		fi
     fi
