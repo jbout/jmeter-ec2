@@ -153,15 +153,33 @@ function runsetup() {
 
         # create the instance(s) and capture the instance id(s)
         echo -n "requesting $instance_count instance(s)..."
-        attempted_instanceids=(`ec2-run-instances \
+        
+        
+        remaining_count=$instance_count
+        i=0
+        while [ $remaining_count -gt 0 ]
+        do
+            if [ $remaining_count -gt 100 ]
+            then
+                batch_size=100
+            else
+                batch_size=$remaining_count
+            fi
+        	batch=(`ec2-run-instances \
 		            --key "$AMAZON_KEYPAIR_NAME" \
                     -t "$INSTANCE_TYPE" \
                     -g "$INSTANCE_SECURITYGROUP" \
-                    -n 1-$instance_count \
+                    -n 1-$batch_size \
 		            --region $REGION \
                     --availability-zone \
                     $INSTANCE_AVAILABILITYZONE $AMI_ID \
                     | awk '/^INSTANCE/ {print $2}'`)
+            for id in ${batch[@]}
+            do
+                attempted_instanceids[i++]=$id
+            done
+            remaining_count=$[$remaining_count-$batch_size]
+        done
 
         # check to see if Amazon returned the desired number of instances as a limit is placed restricting this and we need to handle the case where
         # less than the expected number is given wthout failing the test.
