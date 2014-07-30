@@ -157,7 +157,7 @@ function runsetup() {
         
         remaining_count=$instance_count
         i=0
-        batch_id=0
+        batch_index=0
         while [ $remaining_count -gt 0 ]
         do
             if [ $remaining_count -gt 100 ]
@@ -175,7 +175,7 @@ function runsetup() {
                     --availability-zone \
                     $INSTANCE_AVAILABILITYZONE $AMI_ID \
                     | awk '/^INSTANCE/ {print $2}'`)
-            batches[batch_id++]=$batch
+            batches[batch_index++]="${batch[@]}"
             for id in ${batch[@]}
             do
                 attempted_instanceids[i++]=$id
@@ -211,10 +211,10 @@ function runsetup() {
             echo -n .
             status_check_count=$(( $status_check_count + 1))
 			count_passed=0
-            for batch in ${batches[@]}
+            for batch_row in ${batches[@]}
             do
-                batch_passed=$(ec2-describe-instance-status --region $REGION ${batch[@]} | awk '/INSTANCESTATUS/ {print $3}' | grep -c passed)
-                count_passed=$[$count_passed-$batch_passed]
+                batch_passed=$(ec2-describe-instance-status --region $REGION $batch_row | awk '/INSTANCESTATUS/ {print $3}' | grep -c passed)
+                count_passed=$[$count_passed+$batch_passed]
             done
             sleep 3
         done
@@ -229,13 +229,13 @@ function runsetup() {
 			done
 
             # set hosts array
-            host_count=0
-            for batch in ${batches[@]}
+            host_index=0
+            for batch_row in ${batches[@]}
             do
-                batch_hosts=(`ec2-describe-instances --region $REGION ${batch[@]} | awk '/INSTANCE/ {print $4}'`)
+				batch_hosts=(`ec2-describe-instances --region $REGION $batch_row | awk '/INSTANCE/ {print $4}'`)
                 for host in $batch_hosts
                 do
-                    hosts[host_count++]=host
+                    hosts[host_index++]=host
                 done
             done
 
@@ -243,22 +243,22 @@ function runsetup() {
         else # Amazon probably failed to start a host [*** NOTE this is fairly common ***] so show a msg - TO DO. Could try to replace it with a new one?
             original_count=$countof_instanceids
             # filter requested instances for only those that started well
-            healthy_count=0;
-            host_count=0
-            for batch in ${batches[@]}
+            healthy_index=0;
+            host_index=0
+            for batch_row in ${batches[@]}
             do
-                batch_healthy=(`ec2-describe-instance-status --region $REGION ${batch[@]} \
+                batch_healthy=(`ec2-describe-instance-status --region $REGION $batch_row \
                                 --filter instance-status.reachability=passed \
                                 --filter system-status.reachability=passed \
                                 | awk '/INSTANCE\t/ {print $2}'`)
                 for healthy in $batch_healthy
                 do
-                    healthy_instanceids[healthy_count++]=healthy
+                    healthy_instanceids[healthy_index++]=healthy
                 done
                 batch_hosts=(`ec2-describe-instances --region $REGION ${batch_healthy[@]} | awk '/INSTANCE/ {print $4}'`)
                 for host in $batch_hosts
                 do
-                    hosts[host_count++]=host
+                    hosts[host_index++]=host
                 done
             done
 
@@ -270,9 +270,9 @@ function runsetup() {
 				    # attempt to terminate any running instances - just to be sure
 			        echo "terminating instance(s)..."
 					# We use attempted_instanceids here to make sure that there are no orphan instances left lying around
-                    for batch in ${batches[@]}
+                    for $batch_row in ${batches[@]}
                     do
-                        ec2-terminate-instances --region $REGION ${batch[@]}
+                        ec2-terminate-instances --region $REGION $batch_row
                     done
 			        echo
 				fi
@@ -296,14 +296,14 @@ function runsetup() {
 
 		# assign a name tag to each instance
 		echo "assigning tags..."
-        for batch in ${batches[@]}
+        for batch_row in ${batches[@]}
         do
-            (ec2-create-tags --region $REGION ${batch[@]} --tag ProductKey=$project)
-            (ec2-create-tags --region $REGION ${batch[@]} --tag Service=prod)
-            (ec2-create-tags --region $REGION ${batch[@]} --tag Description=PerformanceTest)
-            (ec2-create-tags --region $REGION ${batch[@]} --tag Owner=$EMAIL)
-            (ec2-create-tags --region $REGION ${batch[@]} --tag ContactEmail=$EMAIL)
-            (ec2-create-tags --region $REGION ${batch[@]} --tag Name="jmeter-ec2-$project")
+            (ec2-create-tags --region $REGION $batch_row --tag ProductKey=$project)
+            (ec2-create-tags --region $REGION $batch_row --tag Service=prod)
+            (ec2-create-tags --region $REGION $batch_row --tag Description=PerformanceTest)
+            (ec2-create-tags --region $REGION $batch_row --tag Owner=$EMAIL)
+            (ec2-create-tags --region $REGION $batch_row --tag ContactEmail=$EMAIL)
+            (ec2-create-tags --region $REGION $batch_row --tag Name="jmeter-ec2-$project")
         done
         wait
         echo "complete"
@@ -861,9 +861,9 @@ function runcleanup() {
 		if [ "$terminate" = "TRUE" ] ; then
 	        echo "terminating instance(s)..."
 			# We use attempted_instanceids here to make sure that there are no orphan instances left lying around
-			for batch in ${batches[@]}
+			for batch_row in ${batches[@]}
             do
-                ec2-terminate-instances --region $REGION ${batch[@]}
+                ec2-terminate-instances --region $REGION $batch_row
             done
 	        echo
 		fi
