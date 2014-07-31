@@ -298,12 +298,13 @@ function runsetup() {
 		echo "assigning tags..."
         for batch_row in ${batches[@]}
         do
-            (ec2-create-tags --region $REGION $batch_row --tag ProductKey=$project)
-            (ec2-create-tags --region $REGION $batch_row --tag Service=prod)
-            (ec2-create-tags --region $REGION $batch_row --tag Description=PerformanceTest)
-            (ec2-create-tags --region $REGION $batch_row --tag Owner=$EMAIL)
-            (ec2-create-tags --region $REGION $batch_row --tag ContactEmail=$EMAIL)
-            (ec2-create-tags --region $REGION $batch_row --tag Name="jmeter-ec2-$project")
+            (ec2-create-tags --region $REGION $batch_row \
+                --tag ProductKey=$project \
+                --tag Service=prod \
+                --tag Description=PerformanceTest \
+                --tag Owner=$EMAIL \
+                --tag ContactEmail=$EMAIL) \
+                --tag Name="jmeter-ec2-$project")
         done
         wait
         echo "complete"
