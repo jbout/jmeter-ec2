@@ -303,7 +303,7 @@ function runsetup() {
                 --tag Service=prod \
                 --tag Description=PerformanceTest \
                 --tag Owner=$EMAIL \
-                --tag ContactEmail=$EMAIL) \
+                --tag ContactEmail=$EMAIL \
                 --tag Name="jmeter-ec2-$project")
         done
         wait
