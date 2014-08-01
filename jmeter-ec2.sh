@@ -233,7 +233,7 @@ function runsetup() {
             for batch_row in ${batches[@]}
             do
 				batch_hosts=(`ec2-describe-instances --region $REGION $batch_row | awk '/INSTANCE/ {print $4}'`)
-                for host in $batch_hosts
+                for host in ${batch_hosts[@]}
                 do
                     hosts[host_index++]=host
                 done
@@ -251,12 +251,12 @@ function runsetup() {
                                 --filter instance-status.reachability=passed \
                                 --filter system-status.reachability=passed \
                                 | awk '/INSTANCE\t/ {print $2}'`)
-                for healthy in $batch_healthy
+                for healthy in ${batch_healthy[@]}
                 do
                     healthy_instanceids[healthy_index++]=healthy
                 done
                 batch_hosts=(`ec2-describe-instances --region $REGION ${batch_healthy[@]} | awk '/INSTANCE/ {print $4}'`)
-                for host in $batch_hosts
+                for host in ${batch_hosts[@]}
                 do
                     hosts[host_index++]=host
                 done
